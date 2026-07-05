@@ -22,9 +22,12 @@
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+import os
 
 import base_datos as db
 import notificador
@@ -121,8 +124,23 @@ def index():
         "servicio": "Agente de Vigilancia - Sistema MAS Transito",
         "version": "3.0.0",
         "framework": "FastAPI",
+        "panel_web": "/panel",
         "documentacion": "/docs",
     }
+
+
+@app.get("/panel", tags=["Info"], summary="Panel de visualizacion del sistema")
+def panel():
+    """
+    Panel web interactivo del Sistema MAS de Transito.
+    Muestra en tiempo real: mapa de distritos, vehiculos,
+    semaforos, papeletas y mensajes FIPA-ACL.
+    Accesible desde cualquier navegador sin instalar nada.
+    """
+    panel_path = os.path.join(os.path.dirname(__file__), "panel_ciudad.html")
+    if not os.path.exists(panel_path):
+        raise HTTPException(status_code=404, detail="panel_ciudad.html no encontrado")
+    return FileResponse(panel_path, media_type="text/html")
 
 
 # -----------------------------------------------

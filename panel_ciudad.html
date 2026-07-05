@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Panel Ciudad - Sistema MAS Transito</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0a0a0c; color:#d0dce8; font-family:'Courier New',monospace; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+
+#barra {
+  display:flex; align-items:center; justify-content:space-between;
+  background:#0d1117; padding:6px 16px; border-bottom:1px solid #1a2030;
+  height:40px; flex-shrink:0;
+}
+#barra h1 { color:#00f0ff; font-size:11px; letter-spacing:2px; }
+#barra-der { display:flex; align-items:center; gap:8px; }
+#estado { font-size:9px; color:#718096; }
+#selector-distrito {
+  background:#0d1117; color:#00f0ff; border:1px solid #00f0ff;
+  font-family:monospace; font-size:10px; padding:3px 8px; cursor:pointer;
+}
+.btn {
+  background:#1a2030; color:#00f0ff; border:1px solid #00f0ff;
+  padding:3px 10px; font-family:monospace; font-size:10px; cursor:pointer;
+}
+.btn:hover { background:#00f0ff; color:#0a0a0c; }
+.btn-warn { border-color:#ffcc00; color:#ffcc00; }
+.btn-warn:hover { background:#ffcc00; color:#0a0a0c; }
+
+#main { display:flex; flex:1; overflow:hidden; }
+#mapa-container { flex:1; position:relative; background:#0a0a0c; overflow:hidden; }
+#mapa-canvas { position:absolute; top:0; left:0; }
+
+#cargando {
+  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  color:#718096; font-size:12px; text-align:center;
+}
+
+#panel-der {
+  width:300px; background:#0a0a0c; border-left:1px solid #1a2030;
+  display:flex; flex-direction:column; overflow:hidden; flex-shrink:0;
+}
+.psec { border-bottom:1px solid #1a2030; padding:7px 10px; }
+.ptit { font-size:9px; font-weight:bold; letter-spacing:1px; margin-bottom:5px; }
+.pscroll { overflow-y:auto; max-height:120px; }
+.pscroll-flex { overflow-y:auto; flex:1; }
+
+.veh-item { margin-bottom:6px; padding-bottom:6px; border-bottom:1px solid #111; }
+.linea { font-size:9px; color:#718096; margin-top:2px; }
+
+.dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:4px; vertical-align:middle; }
+.ok  { background:#39ff14; }
+.err { background:#ff0055; }
+.warn{ background:#ffcc00; }
+</style>
+</head>
+<body>
+
+<div id="barra">
+  <h1>PANEL CIUDAD COMPLETA - SISTEMA MAS TRANSITO</h1>
+  <div id="barra-der">
+    <select id="selector-distrito" onchange="cambiarDistrito(this.value)">
+      <option value="">Cargando distritos...</option>
+    </select>
+    <button class="btn btn-warn" onclick="actualizarTodo()">Actualizar todo</button>
+    <button class="btn" onclick="refrescarMapa()">Refrescar mapa</button>
+    <span id="estado">Conectando...</span>
+  </div>
+</div>
+
+<div id="main">
+  <div id="mapa-container">
+    <canvas id="mapa-canvas"></canvas>
+    <div id="cargando">Cargando mapa...</div>
+  </div>
+
+  <div id="panel-der">
+    <div class="psec">
+      <div class="ptit" style="color:#39ff14">API VIGILANCIA</div>
+      <div id="api-estado" style="font-size:10px"><span class="dot warn"></span>Conectando...</div>
+      <div id="api-total" style="font-size:9px;color:#718096;margin-top:2px">Total: 0 papeletas | S/. 0.00</div>
+    </div>
+
+    <div class="psec">
+      <div class="ptit" style="color:#ffcc00">SEMAFOROS</div>
+      <div id="sem-modo" style="font-size:9px;color:#718096">Modo: cargando...</div>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <div style="text-align:center">
+          <div id="sem-total" style="font-size:18px;font-weight:bold;color:#00f0ff">0</div>
+          <div style="font-size:8px;color:#718096">Total</div>
+        </div>
+        <div style="text-align:center">
+          <div id="sem-verde" style="font-size:18px;font-weight:bold;color:#39ff14">0</div>
+          <div style="font-size:8px;color:#718096">Verde</div>
+        </div>
+        <div style="text-align:center">
+          <div id="sem-amarillo" style="font-size:18px;font-weight:bold;color:#ffcc00">0</div>
+          <div style="font-size:8px;color:#718096">Amarillo</div>
+        </div>
+        <div style="text-align:center">
+          <div id="sem-rojo" style="font-size:18px;font-weight:bold;color:#ff0055">0</div>
+          <div style="font-size:8px;color:#718096">Rojo</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="psec" style="max-height:180px;overflow-y:auto">
+      <div class="ptit" style="color:#00ccff">VEHICULOS ACTIVOS</div>
+      <div id="lista-vehiculos" style="font-size:9px;color:#718096">Sin vehiculos activos</div>
+    </div>
+
+    <div class="psec">
+      <div class="ptit" style="color:#ffcc00">PAPELETAS RECIENTES</div>
+      <div id="lista-papeletas" class="pscroll" style="font-size:9px;color:#718096">Sin papeletas</div>
+    </div>
+
+    <div class="psec" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+      <div class="ptit" style="color:#b026ff">PROTOCOLO FIPA-ACL</div>
+      <div id="lista-acl" class="pscroll-flex" style="font-size:9px;color:#718096">Sin mensajes ACL</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const URL_CATASTRO   = "https://tecnologia-atkj.onrender.com/api/mapas";
+const URL_VEHICULOS  = "https://vehiculos-k7dm.onrender.com";
+const URL_SEMAFOROS  = "https://semaforos.onrender.com/api/semaforos";
+const URL_VIGILANCIA = "https://agente-vigilancia-api.onrender.com";
+
+let distritoActual = null;
+let distritos      = [];
+let _manzanasCache = [];   // ventanas precalculadas, no se regeneran en cada frame
+let vehiculosCat   = {};
+let posiciones     = {};
+let semaforos      = [];
+let papeletas      = [];
+let historialACL   = [];
+let ws             = null;
+let wsIntentos     = 0;
+let distritoCargado = null;
+
+const canvas = document.getElementById("mapa-canvas");
+const ctx    = canvas.getContext("2d");
+
+// ─── HELPERS SEGUROS ─────────────────────────────────────
+
+function arr(v) { return Array.isArray(v) ? v : []; }
+function num(v, def=0) { return typeof v === 'number' ? v : def; }
+
+// ─── FETCH ───────────────────────────────────────────────
+
+async function fetchCatastro() {
+  try {
+    const r = await fetch(URL_CATASTRO);
+    const data = await r.json();
+    // Filtrar distritos basura (mapa_clave: "string" u otros invalidos)
+    distritos = data.filter(d =>
+      d.clave &&
+      d.clave !== "string" &&
+      typeof d.clave === "string" &&
+      d.clave.length < 30
+    );
+    llenarSelector();
+    document.getElementById("cargando").style.display = "none";
+    if (!distritoActual && distritos.length > 0) {
+      cambiarDistrito(distritos[0].clave);
+    }
+    return true;
+  } catch(e) {
+    console.error("Catastro error:", e);
+    document.getElementById("cargando").textContent = "Error cargando catastro";
+    return false;
+  }
+}
+
+async function fetchVehiculosCatalogo() {
+  try {
+    const r = await fetch(URL_VEHICULOS + "/api/vehiculos");
+    const lista = await r.json();
+    vehiculosCat = {};
+    arr(lista).forEach(v => { if (v.id) vehiculosCat[v.id] = v; });
+  } catch(e) { console.error("Catalogo vehiculos:", e); }
+}
+
+async function fetchPosiciones() {
+  try {
+    const r = await fetch(URL_VEHICULOS + "/api/vehiculos/estado/actual");
+    const data = await r.json();
+    posiciones = data.posiciones || {};
+    actualizarPanelVehiculos();
+  } catch(e) { console.error("Posiciones:", e); }
+}
+
+async function fetchSemaforos() {
+  try {
+    const [rSem, rCiclo] = await Promise.all([
+      fetch(URL_SEMAFOROS + "?activo=true"),
+      fetch("https://semaforos.onrender.com/api/ciclos/estado"),
+    ]);
+    const data = await rSem.json();
+
+    // Todos los semaforos validos (sin el registro basura "string")
+    const todosActivos = arr(data).filter(s =>
+      s.mapa_clave &&
+      s.mapa_clave !== "string" &&
+      typeof s.pos_x === "number" &&
+      typeof s.pos_y === "number"
+    );
+
+    // Solo mostrar semaforos del distrito actual en el mapa
+    // Si no tiene, el mapa queda limpio (sin distorsiones)
+    semaforos = todosActivos.filter(s => s.mapa_clave === distritoActual);
+
+    // Contadores del TOTAL global
+    const verde    = todosActivos.filter(s => s.estado === "verde").length;
+    const amarillo = todosActivos.filter(s => s.estado === "amarillo").length;
+    const rojo     = todosActivos.filter(s => s.estado === "rojo").length;
+
+    document.getElementById("sem-total").textContent    = todosActivos.length;
+    document.getElementById("sem-verde").textContent    = verde;
+    document.getElementById("sem-amarillo").textContent = amarillo;
+    document.getElementById("sem-rojo").textContent     = rojo;
+
+    if (rCiclo.ok) {
+      const ciclo  = await rCiclo.json();
+      const activo = ciclo.ciclo_activo ? "automatico" : "manual";
+      const enMapa = semaforos.length > 0 ? semaforos.length : "ninguno (solo 'oeste' tiene datos)";
+      document.getElementById("sem-modo").textContent =
+        `Modo: ${activo} | En mapa: ${enMapa}`;
+    }
+  } catch(e) { console.error("Semaforos:", e); }
+}
+
+async function fetchVigilancia() {
+  try {
+    const [rPap, rEst, rACL] = await Promise.all([
+      fetch(URL_VIGILANCIA + "/api/vigilancia/papeletas?limite=10"),
+      fetch(URL_VIGILANCIA + "/api/vigilancia/estado"),
+      fetch(URL_VIGILANCIA + "/api/vigilancia/acl/historial?limite=8"),
+    ]);
+    papeletas    = await rPap.json();
+    const est    = await rEst.json();
+    historialACL = await rACL.json();
+    actualizarPanelVigilancia(est);
+    actualizarPanelPapeletas();
+    actualizarPanelACL();
+    document.getElementById("api-estado").innerHTML =
+      '<span class="dot ok"></span>API Vigilancia: CONECTADA';
+  } catch(e) {
+    document.getElementById("api-estado").innerHTML =
+      '<span class="dot err"></span>API Vigilancia: SIN CONEXION';
+  }
+}
+
+// ─── ACCIONES DE USUARIO ─────────────────────────────────
+
+async function actualizarTodo() {
+  document.getElementById("estado").textContent = "Actualizando todo...";
+  await Promise.all([
+    fetchCatastro(),
+    fetchVehiculosCatalogo(),
+    fetchSemaforos(),
+    fetchVigilancia(),
+    fetchPosiciones(),
+  ]);
+  document.getElementById("estado").textContent =
+    distritoActual ? `${distritoActual} | OK` : "OK";
+}
+
+async function refrescarMapa() {
+  document.getElementById("estado").textContent = "Refrescando mapa...";
+  await Promise.all([fetchCatastro(), fetchSemaforos()]);
+  document.getElementById("estado").textContent =
+    distritoActual ? `${distritoActual}` : "OK";
+}
+
+// ─── SELECTOR ────────────────────────────────────────────
+
+function llenarSelector() {
+  const sel = document.getElementById("selector-distrito");
+  const prev = distritoActual;
+  sel.innerHTML = distritos.map(d =>
+    `<option value="${d.clave}">${d.clave.toUpperCase()} - ${d.nombre || d.clave}</option>`
+  ).join("");
+  if (prev) sel.value = prev;
+}
+
+function cambiarDistrito(clave) {
+  if (!clave || clave === "string") return;
+  distritoActual = clave;
+  _manzanasCache = [];   // recalcular ventanas para el nuevo distrito
+  document.getElementById("estado").textContent = `${clave}`;
+  const d = distritos.find(x => x.clave === clave);
+  if (d) {
+    redimensionarCanvas(d);
+    fetchSemaforos();
+  }
+  conectarWebSocket(clave);
+}
+
+function redimensionarCanvas(d) {
+  const container = document.getElementById("mapa-container");
+  const w = num(d.width, 800);
+  const h = num(d.height, 800);
+  canvas.width  = w;
+  canvas.height = h;
+  const scaleX = container.clientWidth  / w;
+  const scaleY = container.clientHeight / h;
+  const scale  = Math.min(scaleX, scaleY, 1);
+  canvas.style.width  = (w * scale) + "px";
+  canvas.style.height = (h * scale) + "px";
+  canvas.style.left   = ((container.clientWidth  - w * scale) / 2) + "px";
+  canvas.style.top    = ((container.clientHeight - h * scale) / 2) + "px";
+}
+
+// ─── WEBSOCKET ───────────────────────────────────────────
+
+function conectarWebSocket(clave) {
+  if (ws) { ws.onclose = null; ws.onerror = null; ws.close(); ws = null; }
+  if (!clave || clave === "string") return;
+  wsIntentos = 0;
+
+  function abrir() {
+    try {
+      ws = new WebSocket(`wss://tecnologia-atkj.onrender.com/ws/mapas/${clave}`);
+      ws.onopen  = () => {
+        wsIntentos = 0;
+        document.getElementById("estado").textContent = `${clave} | WS activo`;
+      };
+      ws.onmessage = () => fetchCatastro();
+      ws.onclose = () => {
+        ws = null;
+        wsIntentos++;
+        if (wsIntentos <= 3) setTimeout(abrir, wsIntentos * 5000);
+      };
+      ws.onerror = () => { ws = null; };
+    } catch(e) {}
+  }
+  abrir();
+}
+
+// ─── RENDER ──────────────────────────────────────────────
+
+function render() {
+  try {
+    const d = distritos.find(x => x.clave === distritoActual);
+    if (!d || !d.config) { requestAnimationFrame(render); return; }
+
+    const cfg   = d.config || {};
+    const w     = num(d.width, 800);
+    const h     = num(d.height, 800);
+    const color = d.color_tema || "#00f0ff";
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Fondo base (tierra/suelo)
+    ctx.fillStyle = "#1a1a1f";
+    ctx.fillRect(0, 0, w, h);
+
+    // Manzanas (bloques de ciudad) - solidas con borde y ventanas
+    const cc = cfg.casas_config || {};
+    const paleta = [
+      {bg:"#1e2a22", borde:"#2a4030"},
+      {bg:"#1a1e2a", borde:"#2a3050"},
+      {bg:"#2a2218", borde:"#504030"},
+      {bg:"#221a2a", borde:"#403050"},
+      {bg:"#2a1a1a", borde:"#503030"},
+    ];
+    let idx = 0;
+
+    // Precalcular ventanas SOLO si cambia el distrito (no en cada frame)
+    if (_manzanasCache.length === 0) {
+      const tmpManzanas = [];
+      const precalc = (x0,y0,x1,y1) => {
+        const bw=x1-x0, bh=y1-y0;
+        const vents = [];
+        const cols_v = Math.floor(bw/30);
+        const rows_v = Math.floor(bh/30);
+        for(let r=0;r<rows_v;r++) for(let c=0;c<cols_v;c++) {
+          if(Math.random()>0.4)
+            vents.push({x:x0+18+c*30, y:y0+18+r*30, enc:Math.random()>0.7});
+        }
+        tmpManzanas.push({x0,y0,x1,y1,vents});
+      };
+      arr(cc.rango_x).forEach(rx => {
+        arr(cc.rango_y).forEach(ry => {
+          if(Array.isArray(rx)&&Array.isArray(ry)) precalc(rx[0],ry[0],rx[1],ry[1]);
+        });
+      });
+      arr(cc.cuadras).forEach(c => {
+        if(c&&typeof c.x==='number') precalc(c.x,c.y,c.x+c.w,c.y+c.h);
+      });
+      _manzanasCache = tmpManzanas;
+    }
+
+    const dibujarManzana = (x0,y0,x1,y1,vents) => {
+      const p = paleta[idx % paleta.length];
+      const bw = x1-x0, bh = y1-y0;
+      ctx.fillStyle = p.bg;
+      ctx.fillRect(x0, y0, bw, bh);
+      ctx.strokeStyle = p.borde; ctx.lineWidth = 1; ctx.setLineDash([]);
+      ctx.strokeRect(x0, y0, bw, bh);
+      ctx.strokeStyle = p.borde; ctx.lineWidth = 0.5; ctx.setLineDash([4,6]);
+      ctx.strokeRect(x0+6, y0+6, bw-12, bh-12);
+      ctx.setLineDash([]);
+      // Ventanas precalculadas (sin Math.random en cada frame)
+      vents.forEach(v => {
+        ctx.fillStyle = v.enc ? "#ffee88" : "#334455";
+        ctx.fillRect(v.x, v.y, 4, 3);
+      });
+      idx++;
+    };
+
+    _manzanasCache.forEach(m => dibujarManzana(m.x0,m.y0,m.x1,m.y1,m.vents));
+
+    // Calles (avenidas) - asfalto con marcas viales
+    const dibujarCalle = (eH, av) => {
+      if (eH) {
+        const x1=num(av.x_ini,0), x2=num(av.x_fin,w), cy=av.y;
+        // Asfalto
+        ctx.fillStyle = "#282830";
+        ctx.fillRect(x1, cy-40, x2-x1, 80);
+        // Bordes de acera
+        ctx.strokeStyle = "#3a3a46"; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(x1,cy-40); ctx.lineTo(x2,cy-40); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x1,cy+40); ctx.lineTo(x2,cy+40); ctx.stroke();
+        // Lineas de carril
+        ctx.strokeStyle = "#ffffff22"; ctx.lineWidth = 1; ctx.setLineDash([20,15]);
+        ctx.beginPath(); ctx.moveTo(x1,cy-13); ctx.lineTo(x2,cy-13); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x1,cy+13); ctx.lineTo(x2,cy+13); ctx.stroke();
+        // Linea central amarilla
+        ctx.strokeStyle = "#e6b800"; ctx.lineWidth = 2; ctx.setLineDash([16,10]);
+        ctx.beginPath(); ctx.moveTo(x1,cy); ctx.lineTo(x2,cy); ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        const y1=num(av.y_ini,0), y2=num(av.y_fin,h), cx=av.x;
+        ctx.fillStyle = "#282830";
+        ctx.fillRect(cx-40, y1, 80, y2-y1);
+        ctx.strokeStyle = "#3a3a46"; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(cx-40,y1); ctx.lineTo(cx-40,y2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx+40,y1); ctx.lineTo(cx+40,y2); ctx.stroke();
+        ctx.strokeStyle = "#ffffff22"; ctx.lineWidth = 1; ctx.setLineDash([20,15]);
+        ctx.beginPath(); ctx.moveTo(cx-13,y1); ctx.lineTo(cx-13,y2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx+13,y1); ctx.lineTo(cx+13,y2); ctx.stroke();
+        ctx.strokeStyle = "#e6b800"; ctx.lineWidth = 2; ctx.setLineDash([16,10]);
+        ctx.beginPath(); ctx.moveTo(cx,y1); ctx.lineTo(cx,y2); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    };
+    arr(cfg.avenidas_horizontales).forEach(av => { if(av&&typeof av.y==='number') dibujarCalle(true,av); });
+    arr(cfg.avenidas_verticales).forEach(av => { if(av&&typeof av.x==='number') dibujarCalle(false,av); });
+
+    // Curvas (calles curvas)
+    arr(cfg.curvas).forEach(cv => {
+      if (!cv || typeof cv.cx !== 'number') return;
+      ctx.strokeStyle = "#282830"; ctx.lineWidth = 80; ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(cv.cx, cv.cy, cv.R, cv.ang_ini*Math.PI/180, cv.ang_fin*Math.PI/180);
+      ctx.stroke();
+      ctx.strokeStyle = "#e6b800"; ctx.lineWidth = 2; ctx.setLineDash([16,10]);
+      ctx.beginPath();
+      ctx.arc(cv.cx, cv.cy, cv.R, cv.ang_ini*Math.PI/180, cv.ang_fin*Math.PI/180);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    });
+
+    // Intersecciones (cruces)
+    arr(cfg.intersecciones).forEach(nodo => {
+      if (!nodo || !Array.isArray(nodo.pos) || nodo.pos.length < 2) return;
+      const [nx, ny] = nodo.pos;
+      if (typeof nx !== 'number' || typeof ny !== 'number') return;
+
+      // Base del cruce (asfalto limpio)
+      ctx.fillStyle = "#2e2e38";
+      ctx.fillRect(nx-40, ny-40, 80, 80);
+
+      // Paso peatonal (rayas blancas)
+      const rayas = 4;
+      const raW = 14, raH = 4;
+      for(let i=0;i<rayas;i++) {
+        const offset = -20 + i*(40/(rayas-1));
+        ctx.fillStyle = "#ffffff18";
+        ctx.fillRect(nx-38, ny+offset-raH/2, 76, raH);
+        ctx.fillRect(nx+offset-raH/2, ny-38, raH, 76);
+      }
+
+      // Marco del cruce con color del distrito
+      ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+      ctx.strokeRect(nx-40, ny-40, 80, 80);
+
+      // Punto central
+      ctx.fillStyle = color + "44";
+      ctx.beginPath(); ctx.arc(nx, ny, 6, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(nx, ny, 2, 0, Math.PI*2); ctx.fill();
+
+      // Nombre del nodo
+      const lineas = String(nodo.nombre || "NODO").split("\n");
+      ctx.font = "bold 7px Arial"; ctx.textAlign = "center";
+      const totalH = lineas.length * 10;
+      lineas.forEach((l, i) => {
+        const ty = ny - totalH/2 + i*10 + 5;
+        ctx.fillStyle = "#00000066";
+        ctx.fillText(l, nx+1, ty+1);
+        ctx.fillStyle = color;
+        ctx.fillText(l, nx, ty);
+      });
+    });
+
+    // Semaforos reales
+    semaforos.forEach(sem => {
+      if (typeof sem.pos_x !== 'number' || typeof sem.pos_y !== 'number') return;
+      const col = {verde:"#00e060", amarillo:"#ffcc00", rojo:"#ff2244"}[sem.estado] || "#555";
+      const sx = sem.pos_x, sy = sem.pos_y;
+      // Poste
+      ctx.fillStyle = "#222228";
+      ctx.fillRect(sx-4, sy-12, 8, 24);
+      // Caja del semaforo
+      ctx.fillStyle = "#111118";
+      roundRect(ctx, sx-7, sy-16, 14, 20, 3);
+      ctx.fill();
+      ctx.strokeStyle = "#33333b"; ctx.lineWidth = 1;
+      roundRect(ctx, sx-7, sy-16, 14, 20, 3);
+      ctx.stroke();
+      // Luz
+      ctx.fillStyle = col + "33";
+      ctx.beginPath(); ctx.arc(sx, sy-8, 5, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(sx, sy-8, 3, 0, Math.PI*2); ctx.fill();
+      // Etiqueta
+      ctx.fillStyle = "#888"; ctx.font = "5px Arial"; ctx.textAlign = "center";
+      ctx.fillText((sem.direccion||"").substring(0,2), sx, sy+10);
+    });
+
+    // Vehiculos reales
+    Object.entries(posiciones).forEach(([idStr, pos]) => {
+      if (!pos || typeof pos.x !== 'number' || typeof pos.y !== 'number') return;
+      if (distritoActual && pos.mapa_clave !== distritoActual) return;
+      const id    = parseInt(idStr);
+      const cat   = vehiculosCat[id] || {};
+      const placa = cat.placa || `V-${id}`;
+      const cHex  = cat.color_hex || "#00f0ff";
+      const tiene = papeletas.some(p => p.id_veh === placa);
+      const col   = tiene ? "#ff2244" : cHex;
+      const ang   = (pos.angulo || 0) * Math.PI / 180;
+
+      ctx.save();
+      ctx.translate(pos.x, pos.y);
+      ctx.rotate(ang);
+
+      // Sombra del vehiculo
+      ctx.fillStyle = "#00000066";
+      ctx.fillRect(-9, -5, 18, 10);
+
+      // Cuerpo del vehiculo
+      ctx.fillStyle = col;
+      roundRect(ctx, -8, -5, 16, 10, 3);
+      ctx.fill();
+
+      // Luces delanteras/traseras
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(6, -4, 2, 2);
+      ctx.fillRect(6, 2, 2, 2);
+      ctx.fillStyle = "#ff4444";
+      ctx.fillRect(-8, -4, 2, 2);
+      ctx.fillRect(-8, 2, 2, 2);
+
+      ctx.restore();
+
+      // Etiqueta placa
+      ctx.fillStyle = "#000000aa";
+      roundRect(ctx, pos.x-20, pos.y-22, 40, 12, 2);
+      ctx.fill();
+      ctx.strokeStyle = col; ctx.lineWidth = 0.5;
+      roundRect(ctx, pos.x-20, pos.y-22, 40, 12, 2);
+      ctx.stroke();
+      ctx.fillStyle = col; ctx.font = "bold 7px Arial"; ctx.textAlign = "center";
+      ctx.fillText(placa.substring(0,7), pos.x, pos.y-13);
+    });
+
+    // Marcadores papeletas
+    arr(cfg.intersecciones).forEach(nodo => {
+      if (!nodo || !Array.isArray(nodo.pos) || nodo.pos.length < 2) return;
+      const [nx, ny] = nodo.pos;
+      const nomNodo = String(nodo.nombre || "").replace("\n"," ").substring(0,6);
+      const pap = papeletas.find(p => (p.nodo||"").substring(0,6) === nomNodo);
+      if (!pap) return;
+      ctx.fillStyle = "#cc000099";
+      roundRect(ctx, nx-55, ny-68, 110, 16, 4);
+      ctx.fill();
+      ctx.strokeStyle = "#ff2244"; ctx.lineWidth = 1;
+      roundRect(ctx, nx-55, ny-68, 110, 16, 4);
+      ctx.stroke();
+      ctx.fillStyle = "#ff8888"; ctx.font = "bold 7px Arial"; ctx.textAlign = "center";
+      ctx.fillText(`${pap.numero} | ${(pap.tipo||"").substring(0,20)}`, nx, ny-57);
+    });
+
+  } catch(e) { console.error("Error render:", e); }
+  requestAnimationFrame(render);
+}
+
+// Helper para rectángulos redondeados en canvas
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y);
+  ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+  ctx.lineTo(x+w, y+h-r);
+  ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  ctx.lineTo(x+r, y+h);
+  ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+  ctx.lineTo(x, y+r);
+  ctx.quadraticCurveTo(x, y, x+r, y);
+  ctx.closePath();
+}
+
+// ─── PANELES LATERALES ───────────────────────────────────
+
+function actualizarPanelVehiculos() {
+  const activos = Object.entries(posiciones).filter(([_, p]) =>
+    p && (!distritoActual || p.mapa_clave === distritoActual)
+  );
+  if (!activos.length) {
+    document.getElementById("lista-vehiculos").innerHTML =
+      '<span style="color:#718096">Sin vehiculos activos</span>';
+    return;
+  }
+  document.getElementById("lista-vehiculos").innerHTML = activos.map(([idStr, pos]) => {
+    const id  = parseInt(idStr);
+    const cat = vehiculosCat[id] || {};
+    const vel = Math.abs(pos.velocidad || 0) * 15;
+    const lim = cat.velocidad_max_kmh || 60;
+    const col = vel > lim ? "#ff0055" : "#39ff14";
+    const paps = papeletas.filter(p => p.id_veh === cat.placa).length;
+    return `<div class="veh-item">
+      <div style="font-size:10px;font-weight:bold;color:#00ccff">${cat.placa||'V-'+id} (${cat.categoria||'?'})</div>
+      <div class="linea" style="color:${col}">Vel: ${vel.toFixed(1)} / ${lim} km/h</div>
+      <div class="linea">Chofer: ${cat.chofer||'?'}</div>
+      <div class="linea" style="color:${paps?'#ffcc00':'#718096'}">Papeletas: ${paps}</div>
+    </div>`;
+  }).join("");
+}
+
+function actualizarPanelVigilancia(est) {
+  document.getElementById("api-total").textContent =
+    `Total: ${papeletas.length} papeletas | S/. ${(est.total_multas_s||0).toFixed(2)}`;
+}
+
+function actualizarPanelPapeletas() {
+  if (!papeletas.length) {
+    document.getElementById("lista-papeletas").textContent = "Sin papeletas todavia";
+    return;
+  }
+  document.getElementById("lista-papeletas").innerHTML =
+    [...papeletas].reverse().map(p => {
+      const esRojo = (p.tipo||"").includes("ROJO")||(p.tipo||"").includes("COLISION")||(p.tipo||"").includes("VENCIDO");
+      const col = esRojo ? "#ff0055" : "#ffcc00";
+      return `<div style="margin-bottom:5px">
+        <span style="color:#00f0ff;font-size:9px">${p.numero||"?"}</span>
+        <span style="color:${col};font-size:9px"> ${p.tipo||"?"}</span>
+        <div style="color:#718096;font-size:8px">${p.id_veh||"?"} | S/.${p.monto_s||0}</div>
+      </div>`;
+    }).join("");
+}
+
+function actualizarPanelACL() {
+  if (!historialACL.length) {
+    document.getElementById("lista-acl").textContent = "Sin mensajes ACL todavia";
+    return;
+  }
+  const COLS = {INFORM:"#39ff14",CFP:"#ffcc00",PROPOSE:"#ffcc00",REFUSE:"#ff0055",FAILURE:"#ff0055"};
+  document.getElementById("lista-acl").innerHTML =
+    [...historialACL].reverse().map(e => {
+      const msg  = e.mensaje || {};
+      const perf = msg.performative || "?";
+      const col  = COLS[perf] || "#718096";
+      return `<div style="margin-bottom:5px">
+        <span style="color:${col}">[${perf}]</span>
+        <span style="color:#718096"> ${(msg.sender||"?").substring(0,10)}->${(msg.receiver||e.destino||"?").substring(0,10)}</span>
+        <div style="color:#556070;font-size:8px">conv:${(msg.conversation_id||"?").substring(0,10)}</div>
+      </div>`;
+    }).join("");
+}
+
+// ─── INICIAR ─────────────────────────────────────────────
+
+async function iniciar() {
+  await actualizarTodo();
+  render();
+  setInterval(fetchPosiciones,   2000);
+  setInterval(fetchVigilancia,   3000);
+  setInterval(fetchSemaforos,   10000);
+  setInterval(fetchCatastro,    60000);
+}
+
+iniciar();
+</script>
+</body>
+</html>
